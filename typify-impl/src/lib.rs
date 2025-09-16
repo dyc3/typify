@@ -167,6 +167,15 @@ impl Name {
             Name::Unknown => Name::Unknown,
         }
     }
+
+    pub fn append_required(&self, s: &str) -> Self {
+        match self {
+            Name::Required(prefix) | Name::Suggested(prefix) => {
+                Self::Required(format!("{}_{}", prefix, s))
+            }
+            Name::Unknown => Name::Unknown,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -622,9 +631,15 @@ impl TypeSpace {
         self.next_id += def_len;
 
         for (index, (ref_name, schema)) in definitions.iter().enumerate() {
+            let name = if let RefKey::Def(name) = ref_name {
+                name.clone()
+            } else {
+                "".to_string()
+            };
             self.ref_to_id
                 .insert(ref_name.clone(), TypeId(base_id + index as u64));
-            self.definitions.insert(ref_name.clone(), schema.clone());
+            let existing = self.definitions.insert(ref_name.clone(), schema.clone());
+            let existed = existing.is_some();
         }
 
         // Convert all types; note that we use the type id assigned from the
@@ -692,6 +707,7 @@ impl TypeSpace {
             .and_then(|m| m.default.as_ref())
             .cloned()
             .map(WrappedValue::new);
+
         let type_entry = match &mut type_entry.details {
             // The types that are already named are good to go.
             TypeEntryDetails::Enum(details) => {
@@ -731,15 +747,17 @@ impl TypeSpace {
                     metadata
                 );
                 let subtype_id = self.assign_type(type_entry);
+                let new_type_name = type_name.append_required("Alias");
                 TypeEntryNewtype::from_metadata(
                     self,
-                    type_name,
+                    new_type_name,
                     metadata,
                     subtype_id,
                     schema.clone(),
                 )
             }
         };
+
         // TODO need a type alias?
         if let Some(entry_name) = type_entry.name() {
             self.name_to_id.insert(entry_name.clone(), type_id.clone());
@@ -896,14 +914,19 @@ impl TypeSpace {
         );
 
         // Add all types.
-        self.id_to_entry
-            .values()
-            .for_each(|type_entry| type_entry.output(self, &mut output));
+        for type_entry in self.id_to_entry.values() {
+            info!(
+                "name: {:?}, type name: {}",
+                type_entry.name(),
+                type_entry.type_name(&self)
+            );
+            type_entry.output(self, &mut output);
+        }
 
         // Add all shared default functions.
-        self.defaults
-            .iter()
-            .for_each(|x| output.add_item(output::OutputSpaceMod::Defaults, "", x.into()));
+        for x in &self.defaults {
+            output.add_item(output::OutputSpaceMod::Defaults, "", x.into());
+        }
 
         output.into_stream()
     }

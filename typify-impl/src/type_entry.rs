@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use log::info;
 use proc_macro2::{Punct, Spacing, TokenStream, TokenTree};
 use quote::{format_ident, quote, ToTokens};
 use schemars::schema::{Metadata, Schema};
@@ -544,6 +545,10 @@ impl From<TypeEntryDetails> for TypeEntry {
     }
 }
 
+use std::sync::{LazyLock, Mutex};
+static SEEN_NAMES: LazyLock<Mutex<std::collections::HashSet<String>>> =
+    LazyLock::new(|| Mutex::new(std::collections::HashSet::new()));
+
 impl TypeEntry {
     pub(crate) fn new_native<S: ToString>(type_name: S, impls: &[TypeSpaceImpl]) -> Self {
         TypeEntry {
@@ -770,6 +775,14 @@ impl TypeEntry {
             schema: SchemaWrapper(schema),
         } = enum_details;
 
+        {
+            let mut seen = SEEN_NAMES.lock().unwrap();
+            if seen.contains(name) {
+                eprintln!("DUPLICATE NAME (enum): {}", name);
+            } else {
+                seen.insert(name.clone());
+            }
+        }
         let doc = make_doc(name, description.as_ref(), schema);
 
         // TODO this is a one-off for some useful traits; this should move into
@@ -1119,6 +1132,15 @@ impl TypeEntry {
             deny_unknown_fields,
             schema: SchemaWrapper(schema),
         } = struct_details;
+
+        {
+            let mut seen = SEEN_NAMES.lock().unwrap();
+            if seen.contains(name) {
+                eprintln!("DUPLICATE NAME (struct): {}", name);
+            } else {
+                seen.insert(name.clone());
+            }
+        }
         let doc = make_doc(name, description.as_ref(), schema);
 
         // Generate the serde directives as needed.
@@ -1365,6 +1387,16 @@ impl TypeEntry {
             constraints,
             schema: SchemaWrapper(schema),
         } = newtype_details;
+
+        {
+            let mut seen = SEEN_NAMES.lock().unwrap();
+            if seen.contains(name) {
+                eprintln!("DUPLICATE NAME (newtype): {}", name);
+            } else {
+                seen.insert(name.clone());
+            }
+        }
+
         let doc = make_doc(name, description.as_ref(), schema);
 
         let type_name = format_ident!("{}", name);

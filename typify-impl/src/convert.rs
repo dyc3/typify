@@ -242,16 +242,12 @@ impl TypeSpace {
             SchemaObject {
                 metadata,
                 instance_type: Some(SingleOrVec::Single(single)),
-                format: None,
                 enum_values: None,
                 const_value: None,
                 subschemas: None,
-                number: _,
-                string: _,
-                array: _,
                 object: validation,
                 reference: None,
-                extensions: _,
+                ..
             } if single.as_ref() == &InstanceType::Object => {
                 self.convert_object(type_name, original_schema, metadata, validation)
             }
@@ -342,16 +338,11 @@ impl TypeSpace {
             SchemaObject {
                 metadata,
                 instance_type: Some(SingleOrVec::Single(single)),
-                format: _,
                 enum_values: None,
                 const_value: None,
                 subschemas: None,
-                number: _,
-                string: _,
-                array: _,
-                object: _,
                 reference: None,
-                extensions: _,
+                ..
             } if single.as_ref() == &InstanceType::Null => self.convert_null(metadata),
 
             // Reference
@@ -777,10 +768,13 @@ impl TypeSpace {
             }
 
             // Unknown
-            SchemaObject { .. } => todo!(
-                "invalid (or unexpected) schema:\n{}",
-                serde_json::to_string_pretty(schema).unwrap()
-            ),
+            obj @ SchemaObject { .. } => {
+                todo!(
+                    "invalid (or unexpected) schema:\n{}\nSchema object: {:#?}",
+                    serde_json::to_string_pretty(schema).unwrap(),
+                    obj
+                )
+            }
         }
     }
 
