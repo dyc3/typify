@@ -1,6 +1,6 @@
 // Copyright 2025 Oxide Computer Company
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::merge::{merge_all, try_merge_with_subschemas};
 use crate::type_entry::{
@@ -13,6 +13,7 @@ use schemars::schema::{
     ArrayValidation, InstanceType, Metadata, ObjectValidation, Schema, SchemaObject, SingleOrVec,
     StringValidation, SubschemaValidation,
 };
+use serde_json::Value;
 
 use crate::util::get_type_name;
 
@@ -469,7 +470,7 @@ impl TypeSpace {
                 array: None,
                 object: None,
                 reference: None,
-                extensions: _,
+                extensions,
             } => match subschemas.as_ref() {
                 SubschemaValidation {
                     all_of: Some(subschemas),
@@ -488,7 +489,13 @@ impl TypeSpace {
                     if_schema: None,
                     then_schema: None,
                     else_schema: None,
-                } => self.convert_any_of(type_name, original_schema, metadata, subschemas),
+                } => self.convert_any_of(
+                    type_name,
+                    original_schema,
+                    metadata,
+                    subschemas,
+                    extensions,
+                ),
                 SubschemaValidation {
                     all_of: None,
                     any_of: None,
@@ -497,7 +504,13 @@ impl TypeSpace {
                     if_schema: None,
                     then_schema: None,
                     else_schema: None,
-                } => self.convert_one_of(type_name, original_schema, metadata, subschemas),
+                } => self.convert_one_of(
+                    type_name,
+                    original_schema,
+                    metadata,
+                    subschemas,
+                    extensions,
+                ),
                 SubschemaValidation {
                     all_of: None,
                     any_of: None,
@@ -1442,6 +1455,7 @@ impl TypeSpace {
         original_schema: &'a Schema,
         metadata: &'a Option<Box<Metadata>>,
         subschemas: &'a [Schema],
+        extensions: &BTreeMap<String, Value>,
     ) -> Result<(TypeEntry, &'a Option<Box<Metadata>>)> {
         // Rust can emit "anyOf":[{"$ref":"#/definitions/C"},{"type":"null"}
         // for Option. We match this here because the mutual exclusion check
@@ -1455,7 +1469,7 @@ impl TypeSpace {
         // occurs if each subschema is mutually exclusive i.e. so that exactly
         // one of them can match.
         if all_mutually_exclusive(subschemas, &self.definitions) {
-            self.convert_one_of(type_name, original_schema, metadata, subschemas)
+            self.convert_one_of(type_name, original_schema, metadata, subschemas, extensions)
         } else {
             // We'll want to build a struct that looks like this:
             // struct Name {
@@ -1530,11 +1544,60 @@ impl TypeSpace {
         original_schema: &'a Schema,
         metadata: &'a Option<Box<schemars::schema::Metadata>>,
         subschemas: &'a [Schema],
+        extensions: &BTreeMap<String, Value>,
     ) -> Result<(TypeEntry, &'a Option<Box<Metadata>>)> {
         debug!(
             "one_of {}",
             serde_json::to_string_pretty(subschemas).unwrap()
         );
+
+        if let Some(discriminator_name) = extensions.get("x-discriminator-property-name") {
+            let prop_name = discriminator_name
+                .as_str()
+                .expect("x-discriminator-property-name was not a string");
+
+            let deny_unknown_fields = false;
+
+            let Some(mapping) = extensions.get("x-discriminator-mapping") else {
+                unreachable!()
+            };
+            let name_to_ref = mapping
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(k, v)| (k, v.as_str().unwrap().to_owned()))
+                .collect::<HashMap<_, _>>();
+
+            let variant_names: Vec<String> = name_to_ref.keys().map(|k| (*k).to_owned()).collect();
+
+            // Gather the variant details along with its name.
+            let variants = subschemas
+                .iter()
+                .zip(variant_names)
+                .map(|(_schema, variant_name)| {
+                    let variant_ref = name_to_ref.get(&variant_name).unwrap();
+                    let variant_type_name = variant_ref.split('/').last().unwrap();
+                    let variant_type_id = self.name_to_id.get(variant_type_name).unwrap();
+                    let details = VariantDetails::Item(*variant_type_id);
+                    let variant = Variant::new(variant_name, None, details);
+
+                    Ok(variant)
+                })
+                .collect::<Result<Vec<_>>>()?;
+
+            let ty = TypeEntryEnum::from_metadata(
+                self,
+                type_name,
+                metadata,
+                EnumTagType::Internal {
+                    tag: prop_name.to_owned(),
+                },
+                variants,
+                deny_unknown_fields,
+                original_schema.clone(),
+            );
+            return Ok((ty, metadata));
+        }
 
         // TODO it would probably be smart to do a pass through the schema
         // given to us and either put it into some canonical form or move to

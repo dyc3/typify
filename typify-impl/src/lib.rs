@@ -141,7 +141,7 @@ pub struct TypeNewtype<'a> {
 }
 
 /// Type identifier returned from type creation and used to lookup types.
-#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Clone, Copy, Hash)]
 pub struct TypeId(u64);
 
 #[derive(Debug, Clone, PartialEq)]
@@ -631,15 +631,9 @@ impl TypeSpace {
         self.next_id += def_len;
 
         for (index, (ref_name, schema)) in definitions.iter().enumerate() {
-            let name = if let RefKey::Def(name) = ref_name {
-                name.clone()
-            } else {
-                "".to_string()
-            };
             self.ref_to_id
                 .insert(ref_name.clone(), TypeId(base_id + index as u64));
-            let existing = self.definitions.insert(ref_name.clone(), schema.clone());
-            let existed = existing.is_some();
+            self.definitions.insert(ref_name.clone(), schema.clone());
         }
 
         // Convert all types; note that we use the type id assigned from the

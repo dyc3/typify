@@ -384,7 +384,7 @@ impl TypeSpace {
         ))
     }
 
-    fn internal_variant(
+    pub(crate) fn internal_variant(
         &mut self,
         enum_type_name: Name,
         metadata: &Option<Box<schemars::schema::Metadata>>,
@@ -836,7 +836,7 @@ pub(crate) fn output_variant(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::{BTreeMap, HashSet};
 
     use quote::quote;
     use schema::Schema;
@@ -1107,6 +1107,7 @@ mod tests {
                 &original_schema,
                 &None,
                 &subschemas,
+                &Default::default(),
             )
             .unwrap();
 
