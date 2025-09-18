@@ -39,6 +39,13 @@ impl TypeSpace {
             .iter()
             .chain(required_unspecified)
             .filter_map(|(prop_name, schema)| {
+                // HACK: force exclude the instrument_type property from the
+                // Finix PaymentInstrument schema.
+                if prop_name == "instrument_type" {
+                    // A better way to handle this would be to inspect the x-discriminator-property-name
+                    // and if it matches this property name, exclude it.
+                    return None;
+                }
                 match schema {
                     // TODO We use the schema `false` to indicate an
                     // unsatisfiable schema. We take a shortcut here and simply
